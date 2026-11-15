@@ -24,14 +24,14 @@ jobs:
       - name: Create GitHub Release and upload APK
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.1
-          name: PocketCam v1.0.1
+          tag_name: v1.0.2
+          name: PocketCam v1.0.2
           body: |
-            PocketCam Android 1.0.1
+            PocketCam Android 1.0.2
 
             - Android camera streaming app
             - WebRTC video/audio with Cloudflare Worker signaling
-            - Improved signaling keepalive (WebSocket ping every 15 seconds)
+            - Password-only single-room pairing\n            - Improved Android camera startup and connection error handling\n            - Improved signaling keepalive (WebSocket ping every 15 seconds)
             - Improved connection failure diagnostics
             - Android debug APK for testing
           files: app/build/outputs/apk/debug/app-debug.apk
