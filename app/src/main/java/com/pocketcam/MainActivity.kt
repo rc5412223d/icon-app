@@ -18,10 +18,14 @@ import okhttp3.*
 import org.json.JSONObject
 import org.webrtc.*
 import java.util.UUID
+import java.util.concurrent.TimeUnit
 import kotlin.random.Random
 
 class MainActivity : Activity() {
-    private val http = OkHttpClient()
+    // WebSocket ping/pong prevents an otherwise idle signaling connection from going stale.
+    private val http = OkHttpClient.Builder()
+        .pingInterval(15, TimeUnit.SECONDS)
+        .build()
     private var socket: WebSocket? = null
     private var factory: PeerConnectionFactory? = null
     private var eglBase: EglBase? = null
@@ -137,7 +141,7 @@ class MainActivity : Activity() {
             peer = factory?.createPeerConnection(rtcConfig, object : PeerConnection.Observer {
                 override fun onSignalingChange(state: PeerConnection.SignalingState?) {}
                 override fun onIceConnectionChange(state: PeerConnection.IceConnectionState?) {
-                    runOnUiThread { info.text = "房間 ID：$roomId\n配對碼：$pin\n影音連線：$state" }
+                    runOnUiThread { info.text = "房間 ID：$roomId\\n配對碼：$pin\\n影音連線：$state" }
                 }
                 override fun onIceConnectionReceivingChange(receiving: Boolean) {}
                 override fun onIceGatheringChange(state: PeerConnection.IceGatheringState?) {}
@@ -164,7 +168,7 @@ class MainActivity : Activity() {
                     webSocket.send(JSONObject().put("type", "hello").put("role", "camera")
                         .put("pin", pin).toString())
                     runOnUiThread {
-                        info.text = "房間 ID：$roomId\n配對碼：$pin\n等待網頁觀看端連線…"
+                        info.text = "房間 ID：$roomId\\n配對碼：$pin\\n等待網頁觀看端連線…"
                         startButton.isEnabled = false
                         stopButton.isEnabled = true
                     }
@@ -173,15 +177,26 @@ class MainActivity : Activity() {
                     handleSignal(JSONObject(text))
                 }
                 override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                    runOnUiThread { info.text = "訊號連線失敗：${t.message}" }
+                    val detail = buildString {
+                        append(t.javaClass.simpleName)
+                        append(": ")
+                        append(t.message ?: "系統未提供錯誤訊息")
+                        if (response != null) {
+                            append("\\nHTTP ")
+                            append(response.code)
+                            append(" ")
+                            append(response.message)
+                        }
+                    }
+                    runOnUiThread { info.text = "訊號連線失敗：$detail" }
                 }
                 override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                    runOnUiThread { info.text = "訊號連線已關閉" }
+                    runOnUiThread { info.text = "訊號連線已關閉（$code）：$reason" }
                 }
             })
             ContextCompat.startForegroundService(this, Intent(this, KeepAliveService::class.java))
         } catch (e: Exception) {
-            info.text = "啟動失敗：${e.message}"
+            info.text = "啟動失敗：${e.message ?: e.javaClass.simpleName}"
             stopCamera()
         }
     }
@@ -210,7 +225,7 @@ class MainActivity : Activity() {
     private fun handleSignal(message: JSONObject) {
         when (message.optString("type")) {
             "authenticated" -> runOnUiThread {
-                info.text = "房間 ID：$roomId\n配對碼：$pin\n訊號伺服器已驗證，等待觀看端…"
+                info.text = "房間 ID：$roomId\\n配對碼：$pin\\n訊號伺服器已驗證，等待觀看端…"
             }
             "peer-ready" -> createOffer()
             "answer" -> {
@@ -230,7 +245,7 @@ class MainActivity : Activity() {
             }
             "error" -> runOnUiThread { info.text = "伺服器錯誤：${message.optString("message")}" }
             "peer-left" -> runOnUiThread {
-                info.text = "觀看端已離線\n房間 ID：$roomId\n配對碼：$pin"
+                info.text = "觀看端已離線\\n房間 ID：$roomId\\n配對碼：$pin"
             }
         }
     }
