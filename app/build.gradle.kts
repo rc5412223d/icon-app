@@ -19,7 +19,7 @@ android {
     kotlinOptions { jvmTarget = "17" }
 }
 dependencies {
-    implementation("org.webrtc:google-webrtc:1.0.32006")
+    implementation("io.github.webrtc-sdk:android:150.7871.04")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("androidx.core:core-ktx:1.15.0")
 }
