@@ -193,12 +193,14 @@ class MainActivity : Activity() {
             ?: enumerator.deviceNames.firstOrNull()
             ?: throw IllegalStateException("找不到可用鏡頭")
         capturer = enumerator.createCapturer(cameraName, null)
-        textureHelper = SurfaceTextureHelper.create("PocketCamCapture", f.eglBaseContext)
-        capturer?.initialize(textureHelper, this, source.capturerObserver)
+        val helper = SurfaceTextureHelper.create("PocketCamCapture", f.eglBaseContext)
+        textureHelper = helper
+        capturer?.initialize(helper, this, source.capturerObserver)
         capturer?.startCapture(1280, 720, 24)
         val videoTrack = f.createVideoTrack("pocketcam-video", source)
-        audioSource = f.createAudioSource(MediaConstraints())
-        val audioTrack = f.createAudioTrack("pocketcam-audio", audioSource)
+        val aSource = f.createAudioSource(MediaConstraints())
+        audioSource = aSource
+        val audioTrack = f.createAudioTrack("pocketcam-audio", aSource)
         peer?.addTrack(videoTrack, listOf("pocketcam-stream"))
         peer?.addTrack(audioTrack, listOf("pocketcam-stream"))
     }
