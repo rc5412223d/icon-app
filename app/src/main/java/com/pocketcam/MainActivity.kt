@@ -24,6 +24,7 @@ class MainActivity : Activity() {
     private val http = OkHttpClient()
     private var socket: WebSocket? = null
     private var factory: PeerConnectionFactory? = null
+    private var eglBase: EglBase? = null
     private var peer: PeerConnection? = null
     private var capturer: CameraVideoCapturer? = null
     private var videoSource: VideoSource? = null
@@ -126,6 +127,7 @@ class MainActivity : Activity() {
                 PeerConnectionFactory.InitializationOptions.builder(this).createInitializationOptions()
             )
             factory = PeerConnectionFactory.builder().createPeerConnectionFactory()
+            eglBase = EglBase.create()
             val iceServers = listOf(
                 PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer()
             )
@@ -193,7 +195,7 @@ class MainActivity : Activity() {
             ?: enumerator.deviceNames.firstOrNull()
             ?: throw IllegalStateException("找不到可用鏡頭")
         capturer = enumerator.createCapturer(cameraName, null)
-        val helper = SurfaceTextureHelper.create("PocketCamCapture", f.eglBaseContext)
+        val helper = SurfaceTextureHelper.create("PocketCamCapture", eglBase?.eglBaseContext)
         textureHelper = helper
         capturer?.initialize(helper, this, source.capturerObserver)
         capturer?.startCapture(1280, 720, 24)
@@ -268,6 +270,7 @@ class MainActivity : Activity() {
         videoSource?.dispose(); videoSource = null
         audioSource?.dispose(); audioSource = null
         factory?.dispose(); factory = null
+        eglBase?.release(); eglBase = null
         stopService(Intent(this, KeepAliveService::class.java))
         if (::startButton.isInitialized) startButton.isEnabled = true
         if (::stopButton.isInitialized) stopButton.isEnabled = false
