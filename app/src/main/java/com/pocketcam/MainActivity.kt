@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import android.text.InputType
 import android.view.Gravity
 import android.view.ViewGroup
@@ -34,6 +35,9 @@ class MainActivity : Activity() {
     private var videoSource: VideoSource? = null
     private var audioSource: AudioSource? = null
     private var textureHelper: SurfaceTextureHelper? = null
+    private var offerStarted = false
+    private var remoteDescriptionSet = false
+    private val pendingRemoteCandidates = mutableListOf<IceCandidate>()
 
     private lateinit var serverInput: EditText
     private lateinit var passwordInput: EditText
@@ -258,7 +262,17 @@ class MainActivity : Activity() {
                     }
 
                     override fun onMessage(webSocket: WebSocket, text: String) {
-                        handleSignal(JSONObject(text))
+                        // OkHttp callbacks run on a worker thread. Keep every PeerConnection
+                        // operation on the UI thread to serialize it with camera/lifecycle work.
+                        runOnUiThread {
+                            if (socket !== webSocket) return@runOnUiThread
+                            try {
+                                handleSignal(JSONObject(text))
+                            } catch (e: Exception) {
+                                Log.e("PocketCam", "Failed to handle signaling message", e)
+                                info.text = "處理連線訊號失敗：${e.message ?: e.javaClass.simpleName}"
+                            }
+                        }
                     }
 
                     override fun onFailure(
@@ -338,18 +352,33 @@ class MainActivity : Activity() {
                 info.text = "密碼驗證成功，等待觀看端連線…"
             }
 
-            "peer-ready" -> createOffer()
+            "peer-ready" -> {
+                if (!offerStarted) createOffer()
+            }
 
             "answer" -> {
                 val sdp = message.optJSONObject("sdp") ?: return
-                peer?.setRemoteDescription(
+                val currentPeer = peer ?: return
+                currentPeer.setRemoteDescription(
                     object : SdpObserver {
                         override fun onCreateSuccess(desc: SessionDescription?) {}
-                        override fun onSetSuccess() {}
+                        override fun onSetSuccess() {
+                            remoteDescriptionSet = true
+                            val queued = pendingRemoteCandidates.toList()
+                            pendingRemoteCandidates.clear()
+                            queued.forEach { candidate ->
+                                try {
+                                    currentPeer.addIceCandidate(candidate)
+                                } catch (e: Exception) {
+                                    Log.w("PocketCam", "Could not add queued ICE candidate", e)
+                                }
+                            }
+                        }
                         override fun onCreateFailure(error: String?) {
                             runOnUiThread { info.text = "套用遠端連線資料失敗：$error" }
                         }
                         override fun onSetFailure(error: String?) {
+                            remoteDescriptionSet = false
                             runOnUiThread { info.text = "套用遠端連線資料失敗：$error" }
                         }
                     },
@@ -362,13 +391,17 @@ class MainActivity : Activity() {
 
             "candidate" -> {
                 val c = message.optJSONObject("candidate") ?: return
-                peer?.addIceCandidate(
-                    IceCandidate(
-                        c.optString("sdpMid"),
-                        c.optInt("sdpMLineIndex"),
-                        c.optString("candidate")
-                    )
+                val candidate = IceCandidate(
+                    c.optString("sdpMid"),
+                    c.optInt("sdpMLineIndex"),
+                    c.optString("candidate")
                 )
+                if (remoteDescriptionSet) {
+                    peer?.addIceCandidate(candidate)
+                } else {
+                    // The viewer can send ICE before its answer reaches this device.
+                    pendingRemoteCandidates.add(candidate)
+                }
             }
 
             "error" -> runOnUiThread {
@@ -377,7 +410,10 @@ class MainActivity : Activity() {
                 info.text = "伺服器拒絕連線：$error"
             }
 
-            "peer-left" -> runOnUiThread {
+            "peer-left" -> {
+                offerStarted = false
+                remoteDescriptionSet = false
+                pendingRemoteCandidates.clear()
                 info.text = "觀看端已離線。攝影機仍在等待連線。"
             }
         }
@@ -385,33 +421,61 @@ class MainActivity : Activity() {
 
     private fun createOffer() {
         val p = peer ?: return
-        p.createOffer(object : SdpObserver {
-            override fun onCreateSuccess(desc: SessionDescription?) {
-                if (desc == null) return
-                p.setLocalDescription(object : SdpObserver {
-                    override fun onCreateSuccess(value: SessionDescription?) {}
-                    override fun onSetSuccess() {
-                        send(
-                            JSONObject().put("type", "offer").put(
-                                "sdp",
-                                JSONObject().put("type", "offer")
-                                    .put("sdp", desc.description)
-                            )
-                        )
-                    }
-                    override fun onCreateFailure(error: String?) {}
-                    override fun onSetFailure(error: String?) {
-                        runOnUiThread { info.text = "設定本機連線資料失敗：$error" }
-                    }
-                }, desc)
-            }
+        if (offerStarted) return
+        offerStarted = true
+        remoteDescriptionSet = false
+        pendingRemoteCandidates.clear()
 
-            override fun onSetSuccess() {}
-            override fun onCreateFailure(error: String?) {
-                runOnUiThread { info.text = "建立 Offer 失敗：$error" }
-            }
-            override fun onSetFailure(error: String?) {}
-        }, MediaConstraints())
+        try {
+            p.createOffer(object : SdpObserver {
+                override fun onCreateSuccess(desc: SessionDescription?) {
+                    if (desc == null || p !== peer) {
+                        offerStarted = false
+                        return
+                    }
+                    try {
+                        p.setLocalDescription(object : SdpObserver {
+                            override fun onCreateSuccess(value: SessionDescription?) {}
+                            override fun onSetSuccess() {
+                                if (p !== peer) return
+                                send(
+                                    JSONObject().put("type", "offer").put(
+                                        "sdp",
+                                        JSONObject().put("type", "offer")
+                                            .put("sdp", desc.description)
+                                    )
+                                )
+                            }
+                            override fun onCreateFailure(error: String?) {
+                                offerStarted = false
+                                runOnUiThread { info.text = "建立本機連線資料失敗：$error" }
+                            }
+                            override fun onSetFailure(error: String?) {
+                                offerStarted = false
+                                runOnUiThread { info.text = "設定本機連線資料失敗：$error" }
+                            }
+                        }, desc)
+                    } catch (e: Exception) {
+                        offerStarted = false
+                        Log.e("PocketCam", "setLocalDescription failed", e)
+                        runOnUiThread { info.text = "設定本機連線資料失敗：${e.message}" }
+                    }
+                }
+
+                override fun onSetSuccess() {}
+                override fun onCreateFailure(error: String?) {
+                    offerStarted = false
+                    runOnUiThread { info.text = "建立 Offer 失敗：$error" }
+                }
+                override fun onSetFailure(error: String?) {
+                    offerStarted = false
+                }
+            }, MediaConstraints())
+        } catch (e: Exception) {
+            offerStarted = false
+            Log.e("PocketCam", "createOffer failed", e)
+            info.text = "建立影音連線失敗：${e.message ?: e.javaClass.simpleName}"
+        }
     }
 
     private fun send(json: JSONObject) {
@@ -419,6 +483,9 @@ class MainActivity : Activity() {
     }
 
     private fun stopCamera(updateInfo: Boolean = true) {
+        offerStarted = false
+        remoteDescriptionSet = false
+        pendingRemoteCandidates.clear()
         try { socket?.close(1000, "Camera stopped") } catch (_: Exception) {}
         socket = null
 
