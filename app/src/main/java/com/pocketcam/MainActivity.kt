@@ -23,6 +23,7 @@ import org.webrtc.*
 import java.util.concurrent.TimeUnit
 
 class MainActivity : Activity() {
+    private val workerUrl = "https://icon.chenneww6666.workers.dev"
     private val http = OkHttpClient.Builder()
         .pingInterval(15, TimeUnit.SECONDS)
         .build()
@@ -39,7 +40,6 @@ class MainActivity : Activity() {
     private var remoteDescriptionSet = false
     private val pendingRemoteCandidates = mutableListOf<IceCandidate>()
 
-    private lateinit var serverInput: EditText
     private lateinit var passwordInput: EditText
     private lateinit var info: TextView
     private lateinit var startButton: Button
@@ -69,19 +69,6 @@ class MainActivity : Activity() {
             setTextColor(0xFF9EABC4.toInt())
         })
 
-        serverInput = EditText(this).apply {
-            setSingleLine(true)
-            hint = "訊號伺服器網址"
-            setText("https://icon.chenneww6666.workers.dev")
-            setTextColor(0xFFFFFFFF.toInt())
-            setHintTextColor(0xFF9EABC4.toInt())
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
-        }
-        root.addView(serverInput, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT
-        ).apply { topMargin = 24 })
-
         passwordInput = EditText(this).apply {
             setSingleLine(true)
             hint = "輸入單一連線密碼"
@@ -92,7 +79,7 @@ class MainActivity : Activity() {
         root.addView(passwordInput, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.WRAP_CONTENT
-        ).apply { topMargin = 12 })
+        ).apply { topMargin = 24 })
 
         info = TextView(this).apply {
             text = "輸入密碼後即可啟動攝影機。"
@@ -169,13 +156,9 @@ class MainActivity : Activity() {
     }
 
     private fun startCamera() {
-        val base = serverInput.text.toString().trim().removeSuffix("/")
+        val base = workerUrl
         val password = passwordInput.text.toString()
 
-        if (!base.startsWith("https://") || base.contains("YOUR-WORKER")) {
-            info.text = "請輸入有效的 HTTPS Worker 網址。"
-            return
-        }
         if (password.isBlank()) {
             info.text = "請先輸入連線密碼。"
             return
