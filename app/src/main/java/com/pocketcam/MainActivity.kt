@@ -19,6 +19,7 @@ import org.json.JSONObject
 import org.webrtc.*
 import java.util.UUID
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 
 class MainActivity : Activity() {
     private val workerUrl = "https://icon.chenneww6666.workers.dev"
@@ -35,6 +36,8 @@ class MainActivity : Activity() {
     private var videoTrack: VideoTrack? = null
     private var audioTrack: AudioTrack? = null
     private var textureHelper: SurfaceTextureHelper? = null
+    private var diagnosticVideoSink: VideoSink? = null
+    private val localVideoFrameCount = AtomicLong(0)
     private var cameraClientId = ""
     private val viewerSessions = linkedMapOf<String, ViewerSession>()
 
@@ -180,8 +183,21 @@ class MainActivity : Activity() {
                 PeerConnectionFactory.InitializationOptions.builder(this)
                     .createInitializationOptions()
             )
-            factory = PeerConnectionFactory.builder().createPeerConnectionFactory()
+
+            // Explicitly configure WebRTC's Android video encoder and decoder factories.
+            // Without these, audio may negotiate while the video sender has no usable encoder.
             eglBase = EglBase.create()
+            val eglContext = eglBase?.eglBaseContext
+                ?: throw IllegalStateException("無法初始化 EGL 編碼環境")
+            factory = PeerConnectionFactory.builder()
+                .setVideoEncoderFactory(
+                    DefaultVideoEncoderFactory(eglContext, true, true)
+                )
+                .setVideoDecoderFactory(
+                    DefaultVideoDecoderFactory(eglContext)
+                )
+                .createPeerConnectionFactory()
+
             startCapture()
 
             val wsUrl = workerUrl.replaceFirst("https://", "wss://") + "/ws"
@@ -280,6 +296,20 @@ class MainActivity : Activity() {
         videoTrack = f.createVideoTrack("pocketcam-video", source).apply {
             setEnabled(true)
         }
+
+        // Count frames reaching the WebRTC VideoTrack. This distinguishes camera capture
+        // problems from SDP/transport/remote rendering problems in the next diagnostic log.
+        val frameSink = VideoSink { frame ->
+            val count = localVideoFrameCount.incrementAndGet()
+            if (count == 1L || count % 60L == 0L) {
+                Log.i(
+                    "PocketCam",
+                    "Local video frames delivered to WebRTC: $count, size=${frame.buffer.width}x${frame.buffer.height}"
+                )
+            }
+        }
+        diagnosticVideoSink = frameSink
+        videoTrack?.addSink(frameSink)
 
         val aSource = f.createAudioSource(MediaConstraints())
         audioSource = aSource
@@ -480,9 +510,20 @@ class MainActivity : Activity() {
 
                     val videoSection = desc.description.contains("m=video")
                     val audioSection = desc.description.contains("m=audio")
+                    val videoDirection = desc.description
+                        .substringAfter("m=video", "")
+                        .lineSequence()
+                        .firstOrNull { it.startsWith("a=send") || it.startsWith("a=inactive") }
+                        ?: "direction-not-found"
+                    val videoCodecs = desc.description
+                        .substringAfter("m=video", "")
+                        .lineSequence()
+                        .filter { it.startsWith("a=rtpmap:") }
+                        .take(8)
+                        .joinToString(",")
                     Log.i(
                         "PocketCam",
-                        "Viewer $viewerId offer created: videoSection=$videoSection audioSection=$audioSection"
+                        "Viewer $viewerId offer: videoSection=$videoSection audioSection=$audioSection direction=$videoDirection codecs=$videoCodecs"
                     )
                     if (!videoSection) {
                         session.offerStarted = false
@@ -570,6 +611,13 @@ class MainActivity : Activity() {
         try { textureHelper?.dispose() } catch (_: Exception) {}
         textureHelper = null
 
+        try {
+            val track = videoTrack
+            val sink = diagnosticVideoSink
+            if (track != null && sink != null) track.removeSink(sink)
+        } catch (_: Exception) {}
+        diagnosticVideoSink = null
+        localVideoFrameCount.set(0)
         try { videoTrack?.dispose() } catch (_: Exception) {}
         videoTrack = null
         try { audioTrack?.dispose() } catch (_: Exception) {}
