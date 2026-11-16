@@ -27,12 +27,13 @@ jobs:
           tag_name: v1.1.0
           name: PocketCam v1.1.0
           body: |
-            PocketCam Android 1.0.7
+            PocketCam Android 1.1.0
 
-            - Explicitly configures Android WebRTC video encoder and decoder factories.
-            - Adds local video frame counters to distinguish capture from transport issues.
-            - Logs negotiated video direction and codec information for each viewer.
-            - Keeps password-free camera startup and up to four password-protected viewers.
+            - Redesigned the Android camera control interface with a dark technology style.
+            - Added live viewer roster and per-viewer WebRTC connection status (up to four viewers).
+            - Added front/back camera switching while the stream is active.
+            - Added live capture-frame and connection summaries.
+            - Keeps the Android foreground-service notification visible during streaming.
           files: app/build/outputs/apk/debug/app-debug.apk
           make_latest: true
         env:
