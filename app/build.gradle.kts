@@ -9,8 +9,8 @@ android {
         applicationId = "com.pocketcam"
         minSdk = 26
         targetSdk = 33
-        versionCode = 7
-        versionName = "1.0.7"
+        versionCode = 8
+        versionName = "1.1.0"
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
