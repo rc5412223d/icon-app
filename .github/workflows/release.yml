@@ -24,8 +24,8 @@ jobs:
       - name: Create GitHub Release and upload APK
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.7
-          name: PocketCam v1.0.7
+          tag_name: v1.1.0
+          name: PocketCam v1.1.0
           body: |
             PocketCam Android 1.0.7
 
