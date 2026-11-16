@@ -2,6 +2,9 @@ package com.pocketcam
 
 import android.Manifest
 import android.app.Activity
+import android.content.res.ColorStateList
+import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
@@ -9,6 +12,7 @@ import android.os.Bundle
 import android.util.Log
 import android.view.Gravity
 import android.view.ViewGroup
+import android.widget.ScrollView
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -44,6 +48,11 @@ class MainActivity : Activity() {
     private lateinit var info: TextView
     private lateinit var startButton: Button
     private lateinit var stopButton: Button
+    private lateinit var switchButton: Button
+    private lateinit var viewerInfo: TextView
+    private lateinit var streamInfo: TextView
+    private val viewerLabels = linkedMapOf<String, String>()
+    private var isFrontCamera = false
 
     private class ViewerSession(val peer: PeerConnection) {
         var offerStarted = false
@@ -57,63 +66,174 @@ class MainActivity : Activity() {
     }
 
     private fun buildUi() {
+        val scroll = ScrollView(this).apply {
+            setBackgroundColor(Color.rgb(9, 13, 24))
+            isFillViewport = true
+        }
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(24, 32, 24, 24)
-            gravity = Gravity.CENTER_HORIZONTAL
-            setBackgroundColor(0xFF101522.toInt())
+            setPadding(22, 30, 22, 28)
         }
 
         root.addView(TextView(this).apply {
-            text = "PocketCam"
-            textSize = 28f
-            setTextColor(0xFFFFFFFF.toInt())
+            text = "POCKETCAM"
+            textSize = 12f
+            letterSpacing = 0.24f
+            setTextColor(Color.rgb(117, 145, 255))
         })
         root.addView(TextView(this).apply {
-            text = "Android 即時攝影機"
-            textSize = 14f
-            setTextColor(0xFF9EABC4.toInt())
-        })
-
-        info = TextView(this).apply {
-            text = "按下開始直播即可啟動攝影機，不需要輸入密碼。"
-            textSize = 15f
-            setTextColor(0xFFB9C5DA.toInt())
-        }
-        root.addView(info, LinearLayout.LayoutParams(
+            text = "即時攝影機"
+            textSize = 30f
+            setTypeface(null, android.graphics.Typeface.BOLD)
+            setTextColor(Color.WHITE)
+        }, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.WRAP_CONTENT
-        ).apply { topMargin = 24 })
+        ).apply { topMargin = 4 })
 
+        root.addView(TextView(this).apply {
+            text = "安全、清楚地分享你正在拍攝的即時畫面"
+            textSize = 13f
+            setTextColor(Color.rgb(148, 161, 187))
+        }, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply { topMargin = 5 })
+
+        val statusPanel = createPanel()
+        statusPanel.addView(panelLabel("直播狀態"))
+        info = TextView(this).apply {
+            text = "尚未直播"
+            textSize = 17f
+            setTypeface(null, android.graphics.Typeface.BOLD)
+            setTextColor(Color.WHITE)
+        }
+        statusPanel.addView(info, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply { topMargin = 8 })
+        streamInfo = panelDetail("開始直播後會顯示影像擷取與連線資訊")
+        statusPanel.addView(streamInfo, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply { topMargin = 7 })
+        root.addView(statusPanel, panelParams(22))
+
+        val viewerPanel = createPanel()
+        viewerPanel.addView(panelLabel("觀看者管理"))
+        viewerInfo = panelDetail("目前沒有觀看者")
+        viewerPanel.addView(viewerInfo, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply { topMargin = 10 })
+        root.addView(viewerPanel, panelParams(12))
+
+        val controls = createPanel()
+        controls.addView(panelLabel("攝影機控制"))
+        switchButton = Button(this).apply {
+            text = "切換至前鏡頭"
+            isEnabled = false
+            setTextColor(Color.WHITE)
+            backgroundTintList = ColorStateList.valueOf(Color.rgb(49, 65, 105))
+            setOnClickListener { switchCamera() }
+        }
         startButton = Button(this).apply {
             text = "開始直播"
+            setTextColor(Color.WHITE)
+            backgroundTintList = ColorStateList.valueOf(Color.rgb(87, 112, 245))
             setOnClickListener { requestAndStart() }
         }
         stopButton = Button(this).apply {
             text = "停止直播"
             isEnabled = false
+            setTextColor(Color.WHITE)
+            backgroundTintList = ColorStateList.valueOf(Color.rgb(135, 53, 73))
             setOnClickListener { stopCamera() }
         }
-
-        root.addView(startButton, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT
-        ).apply { topMargin = 24 })
-        root.addView(stopButton, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT
-        ).apply { topMargin = 8 })
+        controls.addView(switchButton, buttonParams(12))
+        controls.addView(startButton, buttonParams(8))
+        controls.addView(stopButton, buttonParams(8))
+        root.addView(controls, panelParams(12))
 
         root.addView(TextView(this).apply {
-            text = "直播期間會顯示 Android 前景服務通知。網頁觀看者必須輸入密碼；最多同時 4 位。請只在自己有權拍攝且已告知相關人員的環境使用。"
+            text = "直播期間 Android 會持續顯示前景服務通知。網頁觀看者需要輸入觀看密碼，最多同時 4 位。請只在自己有權拍攝且已告知相關人員的環境使用。"
             textSize = 12f
-            setTextColor(0xFF9EABC4.toInt())
+            setTextColor(Color.rgb(132, 145, 171))
+            setLineSpacing(4f, 1f)
         }, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.WRAP_CONTENT
-        ).apply { topMargin = 24 })
+        ).apply { topMargin = 18 })
 
-        setContentView(root)
+        scroll.addView(root)
+        setContentView(scroll)
+    }
+
+    private fun createPanel(): LinearLayout {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(18, 17, 18, 17)
+            background = GradientDrawable().apply {
+                setColor(Color.rgb(20, 27, 43))
+                setStroke(1, Color.rgb(43, 55, 80))
+                cornerRadius = 22f
+            }
+        }
+    }
+
+    private fun panelLabel(value: String): TextView = TextView(this).apply {
+        text = value
+        textSize = 13f
+        setTextColor(Color.rgb(126, 151, 255))
+    }
+
+    private fun panelDetail(value: String): TextView = TextView(this).apply {
+        text = value
+        textSize = 13f
+        setTextColor(Color.rgb(170, 184, 208))
+        setLineSpacing(4f, 1f)
+    }
+
+    private fun panelParams(top: Int): LinearLayout.LayoutParams =
+        LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply { topMargin = top.dp() }
+
+    private fun buttonParams(top: Int): LinearLayout.LayoutParams =
+        LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            52.dp()
+        ).apply { topMargin = top.dp() }
+
+    private fun Int.dp(): Int = (this * resources.displayMetrics.density).toInt()
+
+    private fun switchCamera() {
+        val activeCapturer = capturer
+        if (activeCapturer == null || socket == null) {
+            info.text = "請先開始直播，再切換鏡頭。"
+            return
+        }
+        switchButton.isEnabled = false
+        info.text = "正在切換鏡頭…"
+        activeCapturer.switchCamera(object : CameraVideoCapturer.CameraSwitchHandler {
+            override fun onCameraSwitchDone(front: Boolean) {
+                isFrontCamera = front
+                runOnUiThread {
+                    switchButton.text = if (front) "切換至後鏡頭" else "切換至前鏡頭"
+                    switchButton.isEnabled = true
+                    info.text = if (front) "直播中 · 前鏡頭" else "直播中 · 後鏡頭"
+                    updateViewerStatus()
+                }
+            }
+
+            override fun onCameraSwitchError(error: String?) {
+                runOnUiThread {
+                    switchButton.isEnabled = true
+                    info.text = "鏡頭切換失敗：${error ?: "未知錯誤"}"
+                }
+            }
+        })
     }
 
     private fun requestAndStart() {
@@ -327,6 +447,22 @@ class MainActivity : Activity() {
         when (message.optString("type")) {
             "authenticated" -> {
                 info.text = "攝影機已上線，等待觀看者連線…"
+                switchButton.isEnabled = true
+            }
+
+            "viewer-list" -> {
+                viewerLabels.clear()
+                val list = message.optJSONArray("viewers")
+                if (list != null) {
+                    for (i in 0 until list.length()) {
+                        val item = list.optJSONObject(i) ?: continue
+                        val id = item.optString("id")
+                        if (id.isNotBlank()) {
+                            viewerLabels[id] = item.optString("label", "觀看者 ${i + 1}")
+                        }
+                    }
+                }
+                updateViewerStatus()
             }
 
             "peer-ready" -> {
@@ -392,6 +528,7 @@ class MainActivity : Activity() {
                 if (message.optString("role") == "viewer") {
                     val viewerId = message.optString("peerId")
                     removeViewerPeer(viewerId)
+                    viewerLabels.remove(viewerId)
                     updateViewerStatus()
                 }
             }
@@ -587,13 +724,28 @@ class MainActivity : Activity() {
     }
 
     private fun updateViewerStatus() {
-        val total = viewerSessions.size
+        val total = viewerLabels.size
         val connected = viewerSessions.values.count {
             it.peer.iceConnectionState() == PeerConnection.IceConnectionState.CONNECTED ||
                 it.peer.iceConnectionState() == PeerConnection.IceConnectionState.COMPLETED
         }
+        if (::viewerInfo.isInitialized) {
+            viewerInfo.text = if (viewerLabels.isEmpty()) {
+                "目前沒有觀看者"
+            } else {
+                viewerLabels.entries.mapIndexed { index, entry ->
+                    val state = viewerSessions[entry.key]?.peer?.iceConnectionState()?.name
+                        ?: "連線準備中"
+                    "${entry.value}  ·  ${state.lowercase()}"
+                }.joinToString("\n")
+            }
+        }
+        if (::streamInfo.isInitialized) {
+            streamInfo.text = "影像擷取：${localVideoFrameCount.get()} 幀  ·  1280 × 720 / 24 FPS\n影音連線：${connected}/${total} 位已連線  ·  上限 4 位"
+        }
         if (::info.isInitialized && socket != null) {
-            info.text = "直播中：觀看者 $total/4，已建立影音連線 $connected 位。"
+            info.text = if (isFrontCamera) "直播中 · 前鏡頭 · ${total}/4 位觀看者"
+                else "直播中 · 後鏡頭 · ${total}/4 位觀看者"
         }
     }
 
@@ -633,10 +785,18 @@ class MainActivity : Activity() {
         eglBase = null
 
         cameraClientId = ""
+        viewerLabels.clear()
+        isFrontCamera = false
         stopService(Intent(this, KeepAliveService::class.java))
 
         if (::startButton.isInitialized) startButton.isEnabled = true
         if (::stopButton.isInitialized) stopButton.isEnabled = false
+        if (::switchButton.isInitialized) {
+            switchButton.isEnabled = false
+            switchButton.text = "切換至前鏡頭"
+        }
+        if (::viewerInfo.isInitialized) viewerInfo.text = "目前沒有觀看者"
+        if (::streamInfo.isInitialized) streamInfo.text = "直播已停止"
         if (updateInfo && ::info.isInitialized) info.text = "已停止直播。"
     }
 
