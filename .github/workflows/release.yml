@@ -24,16 +24,15 @@ jobs:
       - name: Create GitHub Release and upload APK
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.6
-          name: PocketCam v1.0.6
+          tag_name: v1.0.7
+          name: PocketCam v1.0.7
           body: |
-            PocketCam Android 1.0.6
+            PocketCam Android 1.0.7
 
-            - Camera starts without requiring a typed password.
-            - Web viewers continue to require the configured password.
-            - Added explicit send-only audio/video transceivers.
-            - Supports up to four simultaneous viewers with separate WebRTC sessions.
-            - Improved video offer and viewer connection diagnostics.
+            - Explicitly configures Android WebRTC video encoder and decoder factories.
+            - Adds local video frame counters to distinguish capture from transport issues.
+            - Logs negotiated video direction and codec information for each viewer.
+            - Keeps password-free camera startup and up to four password-protected viewers.
           files: app/build/outputs/apk/debug/app-debug.apk
           make_latest: true
         env:
